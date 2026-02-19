@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ID Card Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container-form {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+        .form-title {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #333;
+        }
+        .form-title h1 {
+            font-size: 28px;
+            font-weight: 700;
+        }
+        .form-title p {
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            display: block;
+        }
+        input[type="text"],
+        input[type="date"],
+        textarea,
+        select,
+        input[type="file"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus,
+        input[type="date"]:focus,
+        textarea:focus,
+        select:focus,
+        input[type="file"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        .file-input-wrapper {
+            position: relative;
+        }
+        input[type="file"]::file-selector-button {
+            background-color: #667eea;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            font-weight: 600;
+        }
+        input[type="file"]::file-selector-button:hover {
+            background-color: #5568d3;
+        }
+        .btn-submit {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 20px;
+        }
+        .btn-submit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        .btn-submit:active {
+            transform: translateY(0);
+        }
+        .help-text {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+        .error-message {
+            color: #dc3545;
+            font-size: 14px;
+            margin-top: 8px;
+            display: none;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container-form">
+        <div class="form-title">
+            <h1>ID Card Generator</h1>
+            <p>Generate your custom ID card with photo and details</p>
+        </div>
+
+        <form id="idCardForm" enctype="multipart/form-data" onsubmit="handleSubmit(event)">
+            <div class="form-group">
+                <label for="name">Full Name *</label>
+                <input 
+                    type="text" 
+                    id="name" 
+                    name="name" 
+                    placeholder="Enter your full name"
+                    value="Abid Malik"
+                    required
+                >
+                <div class="error-message" id="nameError"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="dob">Date of Birth *</label>
+                <input 
+                    type="date" 
+                    id="dob" 
+                    name="dob"
+                    value="1990-05-15"
+                    required
+                >
+                <div class="help-text">Format: YYYY-MM-DD</div>
+                <div class="error-message" id="dobError"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="gender">Gender *</label>
+                <select 
+                    id="gender" 
+                    name="gender"
+                    class="form-select"
+                    required
+                >
+                    <option value="">Select Gender</option>
+                    <option value="Male" selected>Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Others">Others</option>
+                </select>
+                <div class="error-message" id="genderError"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="address">Address *</label>
+                <textarea 
+                    id="address" 
+                    name="address" 
+                    placeholder="Enter your complete address"
+                    required
+                >123 Main Street, New Delhi, Delhi 110001, India</textarea>
+                <div class="help-text">Maximum 300 characters</div>
+                <div class="error-message" id="addressError"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="photo">Photo</label>
+                <input 
+                    type="file" 
+                    id="photo" 
+                    name="photo" 
+                    accept="image/jpeg,image/png,image/webp"
+                >
+                <div class="help-text">Optional - Supported formats: JPEG, PNG, WEBP (Max 5 MB). A placeholder will be used if not provided.</div>
+                <div class="error-message" id="photoError"></div>
+            </div>
+
+            <button type="submit" class="btn-submit">Generate ID Card PDF</button>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p style="margin-top: 15px; color: #667eea; font-weight: 600;">Processing your ID card...</p>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
+        function validateForm() {
+            let isValid = true;
+
+            // Clear previous errors
+            document.querySelectorAll('.error-message').forEach(el => {
+                el.style.display = 'none';
+                el.textContent = '';
+            });
+
+            // Validate name
+            const name = document.getElementById('name').value.trim();
+            if (!name || name.length < 2) {
+                showError('nameError', 'Please enter a valid name (at least 2 characters)');
+                isValid = false;
+            }
+
+            // Validate DOB
+            const dob = document.getElementById('dob').value;
+            if (!dob) {
+                showError('dobError', 'Please select your date of birth');
+                isValid = false;
+            }
+
+            // Validate gender
+            const gender = document.getElementById('gender').value;
+            if (!gender) {
+                showError('genderError', 'Please select your gender');
+                isValid = false;
+            }
+
+            // Validate address
+            const address = document.getElementById('address').value.trim();
+            if (!address || address.length < 5) {
+                showError('addressError', 'Please enter a valid address (at least 5 characters)');
+                isValid = false;
+            }
+            if (address.length > 300) {
+                showError('addressError', 'Address must be less than 300 characters');
+                isValid = false;
+            }
+
+            // Validate photo (optional, but if provided must be valid)
+            const photoInput = document.getElementById('photo');
+            if (photoInput.files.length > 0) {
+                const file = photoInput.files[0];
+                if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+                    showError('photoError', 'Only JPEG, PNG, and WEBP formats are supported');
+                    isValid = false;
+                }
+                if (file.size > MAX_FILE_SIZE) {
+                    showError('photoError', `File size must be less than 5 MB (Current: ${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+                    isValid = false;
+                }
+            }
+
+            return isValid;
+        }
+
+        function showError(elementId, message) {
+            const errorEl = document.getElementById(elementId);
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+        }
+
+        function handleSubmit(event) {
+            event.preventDefault();
+
+            if (!validateForm()) {
+                return;
+            }
+
+            const form = document.getElementById('idCardForm');
+            const loading = document.getElementById('loading');
+            const btn = form.querySelector('button[type="submit"]');
+
+            // Show loading indicator
+            loading.style.display = 'block';
+            btn.disabled = true;
+
+            const formData = new FormData(form);
+
+            fetch('/generate', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => Promise.reject(err));
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                // Create a temporary URL and download
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `id_card_${new Date().getTime()}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+
+                // Reset form
+                form.reset();
+                loading.style.display = 'none';
+                btn.disabled = false;
+            })
+            .catch(error => {
+                loading.style.display = 'none';
+                btn.disabled = false;
+                showError('nameError', `Error: ${error.detail || 'An error occurred while generating your ID card. Please try again.'}`);
+            });
+        }
+    </script>
+</body>
+</html>

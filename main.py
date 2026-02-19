@@ -1,0 +1,492 @@
+"""
+FastAPI ID Card Generator Application
+Generates PDF ID cards by overlaying user details and photo on a template image.
+"""
+
+import os
+import io
+import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi.responses import StreamingResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.requests import Request
+from PIL import Image, ImageDraw, ImageFont
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import inch
+from reportlab.lib.utils import ImageReader
+
+# Configuration
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+TEMPLATE_PATH = Path(__file__).parent / "CardTemplate.jpeg"
+PLACEHOLDER_PATH = Path(__file__).parent / "placeholder-man.webp"
+ALLOWED_FORMATS = {"image/jpeg", "image/png", "image/webp"}
+
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# FastAPI app setup
+app = FastAPI(
+    title="ID Card Generator",
+    description="Generate custom ID cards with photo and personal details",
+    version="1.0.0"
+)
+
+# Setup templates
+templates_dir = Path(__file__).parent / "templates"
+if not templates_dir.exists():
+    templates_dir.mkdir(parents=True, exist_ok=True)
+
+templates = Jinja2Templates(directory=str(templates_dir))
+
+
+# Routes
+@app.get("/", tags=["Form"])
+async def get_form(request: Request):
+    """Serve the main form page."""
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/health", tags=["Health"])
+async def health_check():
+    """Health check endpoint for Render monitoring."""
+    return {"status": "ok"}
+
+
+@app.post("/generate", tags=["Generate"])
+async def generate_id_card(
+    name: str = Form(..., min_length=2, max_length=100),
+    dob: str = Form(...),
+    gender: str = Form(...),
+    address: str = Form(..., min_length=5, max_length=300),
+    photo: Optional[UploadFile] = File(None)
+) -> StreamingResponse:
+    """
+    Generate ID card PDF from user details and photo.
+    
+    Args:
+        name: Full name of the person
+        dob: Date of birth (YYYY-MM-DD format)
+        gender: Gender (Male/Female/Other)
+        address: Complete address
+        photo: Uploaded photo file (optional, uses placeholder if not provided)
+        
+    Returns:
+        PDF file as streaming response
+    """
+    try:
+        # Handle photo - use placeholder if not provided
+        if photo and photo.filename:
+            # Validate file size
+            photo_content = await photo.read()
+            if len(photo_content) > MAX_FILE_SIZE:
+                raise HTTPException(
+                    status_code=400,
+                    detail="File size exceeds maximum allowed size of 5 MB"
+                )
+            
+            # Validate file type
+            if photo.content_type not in ALLOWED_FORMATS:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only JPEG, PNG, and WEBP images are supported"
+                )
+        else:
+            # Use placeholder image
+            if not PLACEHOLDER_PATH.exists():
+                raise FileNotFoundError(f"Placeholder image not found at {PLACEHOLDER_PATH}")
+            with open(PLACEHOLDER_PATH, "rb") as f:
+                photo_content = f.read()
+        
+        # Process the image
+        card_image = process_card_image(
+            photo_content=photo_content,
+            name=name,
+            dob=dob,
+            gender=gender,
+            address=address
+        )
+        
+        # Generate PDF
+        pdf_bytes = create_pdf(card_image)
+        
+        # Return PDF as streaming response
+        filename = f"id_card_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        return StreamingResponse(
+            iter([pdf_bytes]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating ID card: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate ID card. Please try again."
+        )
+
+
+def process_card_image(
+    photo_content: bytes,
+    name: str,
+    dob: str,
+    gender: str,
+    address: str
+) -> Image.Image:
+    """
+    Process the card template to create an ID card matching reference design.
+    
+    Layout:
+    - LEFT HALF: Photo rectangle + Name/DOB/Gender on right of photo
+    - RIGHT HALF: ADDRESS section
+    
+    Args:
+        photo_content: Raw photo file content
+        name: Full name
+        dob: Date of birth
+        gender: Gender
+        address: Address
+        
+    Returns:
+        PIL Image object with overlay
+    """
+    
+    # ==========================================
+    # LAYOUT CONFIGURATION - Adjust these values
+    # ==========================================
+    
+    # Photo settings
+    PHOTO_WIDTH = 100              # Photo width in pixels
+    PHOTO_HEIGHT = None            # Photo height in pixels (None = auto-calculate from width to maintain aspect ratio)
+    PHOTO_LEFT_OFFSET = 35         # Move photo right from left edge (px)
+    PHOTO_PADDING = 0              # Padding inside photo area
+    
+    # Text settings
+    TEXT_FONT_SIZE = 14            # Font size for all text
+    TEXT_SPACING_AFTER_PHOTO = 16   # Space between photo and text (px)
+    LINE_SPACING = 5               # Space between lines
+    TEXT_VERTICAL_OFFSET = 0       # Move text down from photo vertical position (px) - positive moves down
+    
+    # Address settings
+    ADDRESS_RIGHT_OFFSET = 30      # Move address right from center (px)
+    ADDRESS_VERTICAL_OFFSET = 0    # Move address down vertically (px) - positive moves down
+    
+    # ==========================================
+    
+    try:
+        # Load template
+        if not TEMPLATE_PATH.exists():
+            raise FileNotFoundError(f"Card template not found at {TEMPLATE_PATH}")
+        
+        template = Image.open(TEMPLATE_PATH).convert("RGBA")
+        logger.info(f"Template size: {template.size}")
+        
+        # Load and process photo
+        photo = Image.open(io.BytesIO(photo_content)).convert("RGB")
+        logger.info(f"Photo size: {photo.size}")
+        
+        # Create a drawing context
+        draw = ImageDraw.Draw(template)
+        
+        template_width, template_height = template.size
+        mid_x = template_width // 2
+        mid_y = template_height // 2
+        
+        # ===== LEFT SIDE =====
+        # Calculate photo height if not specified (maintain aspect ratio)
+        photo_aspect = photo.width / photo.height
+        actual_photo_height = PHOTO_HEIGHT if PHOTO_HEIGHT else int(PHOTO_WIDTH / photo_aspect)
+        
+        # Photo position - vertically centered
+        photo_x_start = PHOTO_LEFT_OFFSET
+        photo_y_start = mid_y - (actual_photo_height // 2)
+        
+        # Calculate photo dimensions to fit in rectangle
+        photo_fit_w = PHOTO_WIDTH - (2 * PHOTO_PADDING)
+        photo_fit_h = actual_photo_height - (2 * PHOTO_PADDING)
+        
+        photo_aspect = photo.width / photo.height
+        rect_aspect = photo_fit_w / photo_fit_h
+        
+        if photo_aspect > rect_aspect:
+            resized_w = photo_fit_w
+            resized_h = int(photo_fit_w / photo_aspect)
+        else:
+            resized_h = photo_fit_h
+            resized_w = int(photo_fit_h * photo_aspect)
+        
+        photo_resized = photo.resize((resized_w, resized_h), Image.Resampling.LANCZOS)
+        
+        # Center photo in defined area
+        photo_x = photo_x_start + PHOTO_PADDING + int((photo_fit_w - resized_w) / 2)
+        photo_y = photo_y_start + PHOTO_PADDING + int((photo_fit_h - resized_h) / 2)
+        
+        # Paste photo
+        template.paste(photo_resized, (photo_x, photo_y))
+        
+        # Get fonts
+        text_font = get_font(size=TEXT_FONT_SIZE, bold=False)
+        
+        # LEFT SIDE: Name, DOB, and Gender to the right of photo
+        text_x = photo_x_start + PHOTO_WIDTH + TEXT_SPACING_AFTER_PHOTO
+        text_y = photo_y_start + TEXT_VERTICAL_OFFSET
+        
+        # Name (no label, just value)
+        draw.text(
+            (text_x, text_y),
+            name[:30],  # Truncate long names
+            font=text_font,
+            fill=(0, 0, 0, 255)
+        )
+        
+        # DOB in single line: "DOB: dd/mm/yyyy"
+        dob_formatted = format_date_dob(dob)
+        dob_y = text_y + TEXT_FONT_SIZE + LINE_SPACING
+        draw.text(
+            (text_x, dob_y),
+            f"DOB: {dob_formatted}",
+            font=text_font,
+            fill=(0, 0, 0, 255)
+        )
+        
+        # Gender in single line: "Gender: xxxx"
+        gender_y = dob_y + TEXT_FONT_SIZE + LINE_SPACING
+        draw.text(
+            (text_x, gender_y),
+            f"Gender: {gender}",
+            font=text_font,
+            fill=(0, 0, 0, 255)
+        )
+        
+        # ===== RIGHT SIDE =====
+        right_margin = mid_x + ADDRESS_RIGHT_OFFSET
+        right_width = template_width - right_margin - 20
+        
+        # Address label
+        address_label_y = photo_y_start + ADDRESS_VERTICAL_OFFSET
+        draw.text(
+            (right_margin, address_label_y),
+            "ADDRESS",
+            font=text_font,
+            fill=(0, 0, 0, 255)
+        )
+        
+        # Address content with text wrapping
+        address_content_y = address_label_y + TEXT_FONT_SIZE + LINE_SPACING
+        draw_wrapped_text(
+            draw=draw,
+            text=address,
+            x=right_margin,
+            y=address_content_y,
+            font=text_font,
+            fill=(0, 0, 0, 255),
+            max_width=right_width,
+            line_spacing=LINE_SPACING
+        )
+        
+        return template.convert("RGB")
+        
+    except Exception as e:
+        logger.error(f"Error processing card image: {str(e)}", exc_info=True)
+        raise
+
+
+def draw_wrapped_text(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    x: float,
+    y: float,
+    font: ImageFont.FreeTypeFont,
+    fill: tuple,
+    max_width: float,
+    line_spacing: int = 6
+) -> None:
+    """
+    Draw text with word wrapping on image.
+    
+    Args:
+        draw: ImageDraw object
+        text: Text to draw
+        x: X coordinate
+        y: Y coordinate
+        font: Font to use
+        fill: Color (RGBA tuple)
+        max_width: Maximum width before wrapping
+        line_spacing: Space between lines in pixels
+    """
+    words = text.split()
+    lines = []
+    current_line = []
+    
+    for word in words:
+        test_line = " ".join(current_line + [word])
+        bbox = draw.textbbox((0, 0), test_line, font=font)
+        line_width = bbox[2] - bbox[0]
+        
+        if line_width <= max_width:
+            current_line.append(word)
+        else:
+            if current_line:
+                lines.append(" ".join(current_line))
+            current_line = [word]
+    
+    if current_line:
+        lines.append(" ".join(current_line))
+    
+    # Draw all lines
+    current_y = y
+    for line in lines:
+        draw.text((x, current_y), line, font=font, fill=fill)
+        current_y += font.size + line_spacing
+
+
+def get_font(size: int = 20, bold: bool = False) -> ImageFont.FreeTypeFont:
+    """
+    Get a TrueType font, with fallback to default if not found.
+    
+    Args:
+        size: Font size
+        bold: Whether to use bold variant
+        
+    Returns:
+        PIL Font object
+    """
+    font_names = [
+        "/System/Library/Fonts/Arial.ttf",  # macOS
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
+        "C:\\Windows\\Fonts\\arial.ttf",  # Windows
+    ]
+    
+    for font_path in font_names:
+        try:
+            if os.path.exists(font_path):
+                return ImageFont.truetype(font_path, size=size)
+        except Exception:
+            continue
+    
+    # Fallback to default font
+    logger.warning("Could not load TrueType font, using default")
+    return ImageFont.load_default()
+
+
+def format_date(date_str: str) -> str:
+    """
+    Format date string from YYYY-MM-DD to readable format.
+    
+    Args:
+        date_str: Date in YYYY-MM-DD format
+        
+    Returns:
+        Formatted date string (e.g., "15 Feb 2001")
+    """
+    try:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        return date_obj.strftime("%d %b %Y")
+    except ValueError as e:
+        logger.error(f"Error formatting date: {str(e)}")
+        return date_str
+
+
+def format_date_dob(date_str: str) -> str:
+    """
+    Format date string from YYYY-MM-DD to dd/mm/yyyy format.
+    
+    Args:
+        date_str: Date in YYYY-MM-DD format
+        
+    Returns:
+        Formatted date string (e.g., "15/02/2001")
+    """
+    try:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        return date_obj.strftime("%d/%m/%Y")
+    except ValueError as e:
+        logger.error(f"Error formatting date: {str(e)}")
+        return date_str
+
+
+def create_pdf(image: Image.Image) -> bytes:
+    """
+    Create PDF from PIL Image.
+    
+    Args:
+        image: PIL Image object
+        
+    Returns:
+        PDF file content as bytes
+    """
+    try:
+        # Convert image to RGB if necessary
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        
+        # Create PDF
+        pdf_buffer = io.BytesIO()
+        c = canvas.Canvas(pdf_buffer, pagesize=letter)
+        
+        # Get image dimensions
+        img_width, img_height = image.size
+        
+        # Calculate scaling to fit on letter size page (8.5 x 11 inches)
+        page_width, page_height = letter
+        max_width = page_width - 0.5 * inch
+        max_height = page_height - 0.5 * inch
+        
+        # Calculate aspect ratio
+        aspect_ratio = img_width / img_height
+        
+        # Determine final dimensions
+        if aspect_ratio > (max_width / max_height):
+            # Width is limiting factor
+            final_width = max_width
+            final_height = max_width / aspect_ratio
+        else:
+            # Height is limiting factor
+            final_height = max_height
+            final_width = max_height * aspect_ratio
+        
+        # Center image on page
+        x = (page_width - final_width) / 2
+        y = (page_height - final_height) / 2
+        
+        # Save image to bytes buffer
+        img_bytes = io.BytesIO()
+        image.save(img_bytes, format="PNG")
+        img_bytes.seek(0)
+        
+        # Use ImageReader to handle the image
+        img_reader = ImageReader(img_bytes)
+        c.drawImage(
+            img_reader,
+            x,
+            y,
+            width=final_width,
+            height=final_height,
+            preserveAspectRatio=True
+        )
+        
+        c.save()
+        pdf_buffer.seek(0)
+        
+        return pdf_buffer.getvalue()
+        
+    except Exception as e:
+        logger.error(f"Error creating PDF: {str(e)}", exc_info=True)
+        raise
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", 8000)),
+        log_level="info"
+    )
