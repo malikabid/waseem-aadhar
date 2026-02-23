@@ -7,6 +7,7 @@ import os
 import io
 import logging
 import random
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -395,43 +396,80 @@ def draw_wrapped_text(
         current_y += font.size + line_spacing
 
 
+_FONT_CDN_BASE = "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf"
+_FONT_FILES = {
+    "regular": "DejaVuSans.ttf",
+    "bold": "DejaVuSans-Bold.ttf",
+}
+
+
+def _ensure_font(font_filename: str, dest_dir: Path) -> Path | None:
+    """
+    Ensure a font file exists locally; download from CDN if missing.
+
+    Args:
+        font_filename: TTF filename (e.g. 'DejaVuSans.ttf')
+        dest_dir: Directory to save the font
+
+    Returns:
+        Path to the font file, or None if unavailable
+    """
+    dest_path = dest_dir / font_filename
+    if dest_path.exists():
+        return dest_path
+
+    # Try to download from jsDelivr CDN
+    url = f"{_FONT_CDN_BASE}/{font_filename}"
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Downloading font from CDN: {url}")
+        urllib.request.urlretrieve(url, str(dest_path))
+        logger.info(f"Font saved to {dest_path}")
+        return dest_path
+    except Exception as e:
+        logger.warning(f"Could not download font {font_filename} from CDN: {e}")
+        return None
+
+
 def get_font(size: int = 20, bold: bool = False) -> ImageFont.FreeTypeFont:
     """
-    Get a TrueType font, with fallback to default if not found.
-    Checks bundled fonts first for offline support.
-    
+    Get a TrueType font (DejaVu Sans).
+    Checks bundled fonts first; falls back to CDN download, then system fonts.
+
     Args:
         size: Font size
         bold: Whether to use bold variant
-        
+
     Returns:
         PIL Font object
     """
-    # Check bundled fonts first (for offline mode)
+    font_filename = _FONT_FILES["bold"] if bold else _FONT_FILES["regular"]
     bundled_font_dir = Path(__file__).parent / "static" / "fonts"
-    bundled_fonts = [
-        bundled_font_dir / ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"),
-        bundled_font_dir / ("Arial-Bold.ttf" if bold else "Arial.ttf"),
-    ]
-    
-    # System fonts as fallback
-    system_fonts = [
-        "/System/Library/Fonts/Arial.ttf",  # macOS
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
-        "C:\\Windows\\Fonts\\arial.ttf",  # Windows
-    ]
-    
-    all_font_paths = bundled_fonts + system_fonts
-    
-    for font_path in all_font_paths:
+
+    # 1. Try bundled font (or download from CDN into bundle dir)
+    font_path = _ensure_font(font_filename, bundled_font_dir)
+    if font_path:
         try:
-            if os.path.exists(font_path):
-                return ImageFont.truetype(str(font_path), size=size)
+            return ImageFont.truetype(str(font_path), size=size)
+        except Exception as e:
+            logger.warning(f"Failed to load bundled font {font_path}: {e}")
+
+    # 2. Try system fonts
+    system_fonts = [
+        f"/usr/share/fonts/truetype/dejavu/{font_filename}",   # Linux (Render)
+        f"/System/Library/Fonts/Supplemental/Arial{'Bold' if bold else ''}.ttf",  # macOS
+        "/Library/Fonts/Arial.ttf",                             # macOS alternate
+        "C:\\Windows\\Fonts\\arial.ttf",                        # Windows
+    ]
+    for path in system_fonts:
+        try:
+            if os.path.exists(path):
+                return ImageFont.truetype(path, size=size)
         except Exception:
             continue
-    
-    # Fallback to default font
-    logger.warning("Could not load TrueType font, using default")
+
+    # 3. Last resort: PIL default (bitmap) font
+    logger.warning("Could not load TrueType font, using PIL default")
     return ImageFont.load_default()
 
 
