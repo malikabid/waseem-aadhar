@@ -15,6 +15,7 @@ from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
+from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFont
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
@@ -44,6 +45,11 @@ if not templates_dir.exists():
     templates_dir.mkdir(parents=True, exist_ok=True)
 
 templates = Jinja2Templates(directory=str(templates_dir))
+
+# Mount static files for offline capability
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 # Routes
@@ -392,6 +398,7 @@ def draw_wrapped_text(
 def get_font(size: int = 20, bold: bool = False) -> ImageFont.FreeTypeFont:
     """
     Get a TrueType font, with fallback to default if not found.
+    Checks bundled fonts first for offline support.
     
     Args:
         size: Font size
@@ -400,16 +407,26 @@ def get_font(size: int = 20, bold: bool = False) -> ImageFont.FreeTypeFont:
     Returns:
         PIL Font object
     """
-    font_names = [
+    # Check bundled fonts first (for offline mode)
+    bundled_font_dir = Path(__file__).parent / "static" / "fonts"
+    bundled_fonts = [
+        bundled_font_dir / ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"),
+        bundled_font_dir / ("Arial-Bold.ttf" if bold else "Arial.ttf"),
+    ]
+    
+    # System fonts as fallback
+    system_fonts = [
         "/System/Library/Fonts/Arial.ttf",  # macOS
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
         "C:\\Windows\\Fonts\\arial.ttf",  # Windows
     ]
     
-    for font_path in font_names:
+    all_font_paths = bundled_fonts + system_fonts
+    
+    for font_path in all_font_paths:
         try:
             if os.path.exists(font_path):
-                return ImageFont.truetype(font_path, size=size)
+                return ImageFont.truetype(str(font_path), size=size)
         except Exception:
             continue
     
