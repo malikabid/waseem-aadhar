@@ -154,6 +154,7 @@
                     name="name" 
                     placeholder="Example: John Doe"
                     required
+                    value="John Doe"
                 >
                 <div class="error-message" id="nameError"></div>
             </div>
@@ -165,7 +166,8 @@
                     id="dob" 
                     name="dob"
                     required
-                >
+                    value="1990-01-01" 
+                />
                 <div class="help-text">Format: YYYY-MM-DD</div>
                 <div class="error-message" id="dobError"></div>
             </div>
@@ -179,7 +181,7 @@
                     required
                 >
                     <option value="" selected>Select Gender</option>
-                    <option value="Male">Male</option>
+                    <option value="Male" selected>Male</option>
                     <option value="Female">Female</option>
                     <option value="Others">Others</option>
                 </select>
@@ -193,7 +195,7 @@
                     name="address" 
                     placeholder="Example: 123 Main Street, City, State 110001, India"
                     required
-                ></textarea>
+                >123 Main Street, City, State 110001, India</textarea>
                 <div class="help-text">Maximum 300 characters</div>
                 <div class="error-message" id="addressError"></div>
             </div>

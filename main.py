@@ -6,6 +6,7 @@ Generates PDF ID cards by overlaying user details and photo on a template image.
 import os
 import io
 import logging
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -58,6 +59,17 @@ async def health_check():
     return {"status": "ok"}
 
 
+def generate_aadhar_number() -> str:
+    """
+    Generate a random 12-digit Aadhar number in XXXX XXXX XXXX format.
+    
+    Returns:
+        Aadhar number as string in format: XXXX XXXX XXXX
+    """
+    aadhar = ''.join([str(random.randint(0, 9)) for _ in range(12)])
+    return f"{aadhar[:4]} {aadhar[4:8]} {aadhar[8:12]}"
+
+
 @app.post("/generate", tags=["Generate"])
 async def generate_id_card(
     name: str = Form(..., min_length=2, max_length=100),
@@ -103,13 +115,17 @@ async def generate_id_card(
             with open(PLACEHOLDER_PATH, "rb") as f:
                 photo_content = f.read()
         
+        # Generate random Aadhar number
+        aadhar_number = generate_aadhar_number()
+        
         # Process the image
         card_image = process_card_image(
             photo_content=photo_content,
             name=name,
             dob=dob,
             gender=gender,
-            address=address
+            address=address,
+            aadhar_number=aadhar_number
         )
         
         # Generate PDF
@@ -138,7 +154,8 @@ def process_card_image(
     name: str,
     dob: str,
     gender: str,
-    address: str
+    address: str,
+    aadhar_number: str
 ) -> Image.Image:
     """
     Process the card template to create an ID card matching reference design.
@@ -153,6 +170,7 @@ def process_card_image(
         dob: Date of birth
         gender: Gender
         address: Address
+        aadhar_number: Aadhar number in format XXXX XXXX XXXX
         
     Returns:
         PIL Image object with overlay
@@ -172,11 +190,15 @@ def process_card_image(
     TEXT_FONT_SIZE = 14            # Font size for all text
     TEXT_SPACING_AFTER_PHOTO = 16   # Space between photo and text (px)
     LINE_SPACING = 5               # Space between lines
-    TEXT_VERTICAL_OFFSET = 0       # Move text down from photo vertical position (px) - positive moves down
+    TEXT_VERTICAL_OFFSET = 10       # Move text down from photo vertical position (px) - positive moves down
     
     # Address settings
-    ADDRESS_RIGHT_OFFSET = 30      # Move address right from center (px)
-    ADDRESS_VERTICAL_OFFSET = 0    # Move address down vertically (px) - positive moves down
+    ADDRESS_RIGHT_OFFSET = 50      # Move address right from center (px)
+    ADDRESS_VERTICAL_OFFSET = 10    # Move address down vertically (px) - positive moves down
+    
+    # Aadhar number settings
+    AADHAR_HORIZONTAL_OFFSET = 0   # Move aadhar number left/right (px) - positive moves right
+    AADHAR_VERTICAL_OFFSET = 20     # Move aadhar number up/down (px) - positive moves down
     
     # ==========================================
     
@@ -265,6 +287,16 @@ def process_card_image(
             fill=(0, 0, 0, 255)
         )
         
+        # Aadhar Number at the bottom of left section
+        aadhar_x = text_x + AADHAR_HORIZONTAL_OFFSET
+        aadhar_y = gender_y + TEXT_FONT_SIZE + (LINE_SPACING * 4) + AADHAR_VERTICAL_OFFSET
+        draw.text(
+            (aadhar_x, aadhar_y),
+            f"{aadhar_number}",
+            font=text_font,
+            fill=(0, 0, 0, 255)
+        )
+        
         # ===== RIGHT SIDE =====
         right_margin = mid_x + ADDRESS_RIGHT_OFFSET
         right_width = template_width - right_margin - 20
@@ -289,6 +321,15 @@ def process_card_image(
             fill=(0, 0, 0, 255),
             max_width=right_width,
             line_spacing=LINE_SPACING
+        )
+        
+        # Aadhar Number on right side at same vertical position as left side
+        aadhar_right_x = right_margin + 50 +AADHAR_HORIZONTAL_OFFSET
+        draw.text(
+            (aadhar_right_x, aadhar_y),
+            f"{aadhar_number}",
+            font=text_font,
+            fill=(0, 0, 0, 255)
         )
         
         return template.convert("RGB")
