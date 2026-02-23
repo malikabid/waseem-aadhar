@@ -199,6 +199,7 @@ def process_card_image(
     # Aadhar number settings
     AADHAR_HORIZONTAL_OFFSET = 0   # Move aadhar number left/right (px) - positive moves right
     AADHAR_VERTICAL_OFFSET = 20     # Move aadhar number up/down (px) - positive moves down
+    AADHAR_HORIZONTAL_OFFSET_RIGHT = 50  # Additional horizontal offset for right side aadhar number (px)
     
     # ==========================================
     
@@ -324,7 +325,7 @@ def process_card_image(
         )
         
         # Aadhar Number on right side at same vertical position as left side
-        aadhar_right_x = right_margin + 50 +AADHAR_HORIZONTAL_OFFSET
+        aadhar_right_x = right_margin + AADHAR_HORIZONTAL_OFFSET_RIGHT
         draw.text(
             (aadhar_right_x, aadhar_y),
             f"{aadhar_number}",
