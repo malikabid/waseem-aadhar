@@ -154,7 +154,6 @@
                     name="name" 
                     placeholder="Example: John Doe"
                     required
-                    value="John Doe"
                 >
                 <div class="error-message" id="nameError"></div>
             </div>
@@ -166,7 +165,6 @@
                     id="dob" 
                     name="dob"
                     required
-                    value="1990-01-01" 
                 />
                 <div class="help-text">Format: YYYY-MM-DD</div>
                 <div class="error-message" id="dobError"></div>
@@ -181,7 +179,7 @@
                     required
                 >
                     <option value="" selected>Select Gender</option>
-                    <option value="Male" selected>Male</option>
+                    <option value="Male">Male</option>
                     <option value="Female">Female</option>
                     <option value="Others">Others</option>
                 </select>
@@ -195,7 +193,7 @@
                     name="address" 
                     placeholder="Example: 123 Main Street, City, State 110001, India"
                     required
-                >123 Main Street, City, State 110001, India</textarea>
+                ></textarea>
                 <div class="help-text">Maximum 300 characters</div>
                 <div class="error-message" id="addressError"></div>
             </div>
@@ -337,6 +335,23 @@
                 showError('nameError', `Error: ${error.detail || 'An error occurred while generating your ID card. Please try again.'}`);
             });
         }
+
+        // Test mode: fill form with sample data when ?testmode is in the URL
+        (function () {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('testmode')) {
+                document.getElementById('name').value = 'John Doe';
+                document.getElementById('dob').value = '1990-01-01';
+                document.getElementById('gender').value = 'Male';
+                document.getElementById('address').value = '123 Main Street, New Delhi, Delhi 110001, India';
+
+                // Add a visible test mode badge
+                const badge = document.createElement('div');
+                badge.textContent = '⚠ TEST MODE';
+                badge.style.cssText = 'background:#fff3cd;color:#856404;border:1px solid #ffc107;border-radius:4px;padding:6px 12px;text-align:center;font-weight:700;font-size:13px;margin-bottom:16px;';
+                document.querySelector('.form-title').after(badge);
+            }
+        })();
     </script>
 </body>
 </html>
