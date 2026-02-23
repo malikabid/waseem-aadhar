@@ -309,27 +309,47 @@ def process_card_image(
         right_margin = mid_x + ADDRESS_RIGHT_OFFSET
         right_width = template_width - right_margin - 20
         
-        # Address label
+        # Address: "ADDRESS : <first part>," on first line, rest indented to align
         address_label_y = photo_y_start + ADDRESS_VERTICAL_OFFSET
-        draw.text(
-            (right_margin, address_label_y),
-            "ADDRESS",
-            font=text_font,
-            fill=(0, 0, 0, 255)
-        )
-        
-        # Address content with text wrapping
-        address_content_y = address_label_y + TEXT_FONT_SIZE + LINE_SPACING
-        draw_wrapped_text(
-            draw=draw,
-            text=address,
-            x=right_margin,
-            y=address_content_y,
-            font=text_font,
-            fill=(0, 0, 0, 255),
-            max_width=right_width,
-            line_spacing=LINE_SPACING
-        )
+        address_parts = [part.strip() for part in address.split(",") if part.strip()]
+
+        label_prefix = "ADDRESS : "
+        # Measure prefix width so continuation lines align under the first part
+        prefix_bbox = draw.textbbox((0, 0), label_prefix, font=text_font)
+        prefix_width = prefix_bbox[2] - prefix_bbox[0]
+        indent_x = right_margin + prefix_width
+        indent_width = template_width - indent_x - 20
+
+        if address_parts:
+            # First line: "ADDRESS : <first part>,"  (comma only if more parts follow)
+            first_suffix = address_parts[0] + ("," if len(address_parts) > 1 else "")
+            draw.text(
+                (right_margin, address_label_y),
+                label_prefix + first_suffix,
+                font=text_font,
+                fill=(0, 0, 0, 255)
+            )
+            address_content_y = address_label_y + TEXT_FONT_SIZE + LINE_SPACING
+            # Remaining parts indented
+            for part in address_parts[1:]:
+                draw_wrapped_text(
+                    draw=draw,
+                    text=part,
+                    x=indent_x,
+                    y=address_content_y,
+                    font=text_font,
+                    fill=(0, 0, 0, 255),
+                    max_width=indent_width,
+                    line_spacing=LINE_SPACING
+                )
+                address_content_y += TEXT_FONT_SIZE + LINE_SPACING
+        else:
+            draw.text(
+                (right_margin, address_label_y),
+                label_prefix,
+                font=text_font,
+                fill=(0, 0, 0, 255)
+            )
         
         # Aadhar Number on right side at same vertical position as left side
         aadhar_right_x = right_margin + AADHAR_HORIZONTAL_OFFSET_RIGHT
