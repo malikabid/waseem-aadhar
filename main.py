@@ -83,6 +83,7 @@ async def generate_id_card(
     dob: str = Form(...),
     gender: str = Form(...),
     address: str = Form(..., min_length=5, max_length=300),
+    output_format: str = Form("png"),
     photo: Optional[UploadFile] = File(None)
 ) -> StreamingResponse:
     """
@@ -135,14 +136,23 @@ async def generate_id_card(
             aadhar_number=aadhar_number
         )
         
-        # Generate PDF
-        pdf_bytes = create_pdf(card_image)
-        
-        # Return PDF as streaming response
-        filename = f"id_card_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        # Generate PDF or PNG
+        output_format = output_format.lower().strip()
+        if output_format == "pdf":
+            file_bytes = create_pdf(card_image)
+            media_type = "application/pdf"
+            ext = "pdf"
+        else:
+            img_buf = io.BytesIO()
+            card_image.convert("RGB").save(img_buf, format="PNG")
+            file_bytes = img_buf.getvalue()
+            media_type = "image/png"
+            ext = "png"
+
+        filename = f"id_card_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
         return StreamingResponse(
-            iter([pdf_bytes]),
-            media_type="application/pdf",
+            iter([file_bytes]),
+            media_type=media_type,
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
         
