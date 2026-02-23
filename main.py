@@ -198,15 +198,13 @@ def process_card_image(
     # ==========================================
     
     # Photo settings
-    PHOTO_WIDTH = 100              # Photo width in pixels
-    PHOTO_HEIGHT = None            # Photo height in pixels (None = auto-calculate from width to maintain aspect ratio)
-    PHOTO_LEFT_OFFSET = 35         # Move photo right from left edge (px)
-    PHOTO_PADDING = 0              # Padding inside photo area
+    PHOTO_HEIGHT = 100             # Max photo height in pixels (width scales to maintain aspect ratio)
+    PHOTO_LEFT_OFFSET = 40         # Move photo right from left edge (px)
     
     # Text settings
-    TEXT_FONT_SIZE = 14            # Font size for all text
-    TEXT_SPACING_AFTER_PHOTO = 16   # Space between photo and text (px)
-    LINE_SPACING = 5               # Space between lines
+    TEXT_FONT_SIZE = 14             # Font size for all text
+    TEXT_SPACING_AFTER_PHOTO = 24   # Space between photo and text (px)
+    LINE_SPACING = 5                # Space between lines
     TEXT_VERTICAL_OFFSET = 10       # Move text down from photo vertical position (px) - positive moves down
     
     # Address settings
@@ -240,42 +238,26 @@ def process_card_image(
         mid_y = template_height // 2
         
         # ===== LEFT SIDE =====
-        # Calculate photo height if not specified (maintain aspect ratio)
+        # Resize photo: height is hard-capped at PHOTO_HEIGHT, width scales with aspect ratio
         photo_aspect = photo.width / photo.height
-        actual_photo_height = PHOTO_HEIGHT if PHOTO_HEIGHT else int(PHOTO_WIDTH / photo_aspect)
-        
-        # Photo position - vertically centered
+        resized_h = PHOTO_HEIGHT
+        resized_w = int(PHOTO_HEIGHT * photo_aspect)
+        logger.info(f"Resizing photo to {resized_w}x{resized_h} (PHOTO_HEIGHT={PHOTO_HEIGHT})")
+
+        # Photo position - vertically centered around mid_y
         photo_x_start = PHOTO_LEFT_OFFSET
-        photo_y_start = mid_y - (actual_photo_height // 2)
-        
-        # Calculate photo dimensions to fit in rectangle
-        photo_fit_w = PHOTO_WIDTH - (2 * PHOTO_PADDING)
-        photo_fit_h = actual_photo_height - (2 * PHOTO_PADDING)
-        
-        photo_aspect = photo.width / photo.height
-        rect_aspect = photo_fit_w / photo_fit_h
-        
-        if photo_aspect > rect_aspect:
-            resized_w = photo_fit_w
-            resized_h = int(photo_fit_w / photo_aspect)
-        else:
-            resized_h = photo_fit_h
-            resized_w = int(photo_fit_h * photo_aspect)
+        photo_y_start = mid_y - (resized_h // 2)
         
         photo_resized = photo.resize((resized_w, resized_h), Image.Resampling.LANCZOS)
         
-        # Center photo in defined area
-        photo_x = photo_x_start + PHOTO_PADDING + int((photo_fit_w - resized_w) / 2)
-        photo_y = photo_y_start + PHOTO_PADDING + int((photo_fit_h - resized_h) / 2)
-        
         # Paste photo
-        template.paste(photo_resized, (photo_x, photo_y))
+        template.paste(photo_resized, (photo_x_start, photo_y_start))
         
         # Get fonts
         text_font = get_font(size=TEXT_FONT_SIZE, bold=False)
         
         # LEFT SIDE: Name, DOB, and Gender to the right of photo
-        text_x = photo_x_start + PHOTO_WIDTH + TEXT_SPACING_AFTER_PHOTO
+        text_x = photo_x_start + resized_w + TEXT_SPACING_AFTER_PHOTO
         text_y = photo_y_start + TEXT_VERTICAL_OFFSET
         
         # Name (no label, just value)
@@ -317,7 +299,6 @@ def process_card_image(
         
         # ===== RIGHT SIDE =====
         right_margin = mid_x + ADDRESS_RIGHT_OFFSET
-        right_width = template_width - right_margin - 20
         
         # Address: "ADDRESS : <first part>," on first line, rest indented to align
         address_label_y = photo_y_start + ADDRESS_VERTICAL_OFFSET
