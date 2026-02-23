@@ -194,165 +194,97 @@ def process_card_image(
     """
     
     # ==========================================
-    # LAYOUT CONFIGURATION - Adjust these values
+    # LAYOUT CONFIGURATION
+    # All coordinates are absolute pixel positions based on the 672x294 px template.
+    # Text and aadhar positions are fully independent of photo size.
     # ==========================================
-    
-    # Photo settings
-    PHOTO_HEIGHT = 100             # Max photo height in pixels (width scales to maintain aspect ratio)
-    PHOTO_LEFT_OFFSET = 40         # Move photo right from left edge (px)
-    
-    # Text settings
-    TEXT_FONT_SIZE = 14             # Font size for all text
-    TEXT_SPACING_AFTER_PHOTO = 24   # Space between photo and text (px)
-    LINE_SPACING = 5                # Space between lines
-    TEXT_VERTICAL_OFFSET = 10       # Move text down from photo vertical position (px) - positive moves down
-    
-    # Address settings
-    ADDRESS_RIGHT_OFFSET = 50      # Move address right from center (px)
-    ADDRESS_VERTICAL_OFFSET = 10    # Move address down vertically (px) - positive moves down
-    
-    # Aadhar number settings
-    AADHAR_HORIZONTAL_OFFSET = 0   # Move aadhar number left/right (px) - positive moves right
-    AADHAR_VERTICAL_OFFSET = 20     # Move aadhar number up/down (px) - positive moves down
-    AADHAR_HORIZONTAL_OFFSET_RIGHT = 50  # Additional horizontal offset for right side aadhar number (px)
-    
+
+    TEXT_FONT_SIZE = 14
+    LINE_SPACING   = 5
+    LINE_HEIGHT    = TEXT_FONT_SIZE + LINE_SPACING  # 19 px per line
+
+    # Photo slot — top-left anchor + max bounding box (aspect ratio always preserved)
+    PHOTO_SLOT_X = 35
+    PHOTO_SLOT_Y = 90
+    PHOTO_MAX_W  = 100   # Hard cap: photo width will never exceed this
+    PHOTO_MAX_H  = 100   # Hard cap: photo height will never exceed this
+
+    # Left text block (Name / DOB / Gender) — fixed, never moves with photo
+    TEXT_X = 160
+    TEXT_Y = 95
+
+    # Aadhar number row — fixed Y near bottom of content area, both sides
+    AADHAR_LEFT_X  = 145
+    AADHAR_RIGHT_X = 430
+    AADHAR_Y       = 195
+
+    # Right side address block — fixed position
+    ADDRESS_X = 386
+    ADDRESS_Y = 95
+
     # ==========================================
-    
+
     try:
-        # Load template
         if not TEMPLATE_PATH.exists():
             raise FileNotFoundError(f"Card template not found at {TEMPLATE_PATH}")
-        
+
         template = Image.open(TEMPLATE_PATH).convert("RGBA")
         logger.info(f"Template size: {template.size}")
-        
-        # Load and process photo
+
         photo = Image.open(io.BytesIO(photo_content)).convert("RGB")
         logger.info(f"Photo size: {photo.size}")
-        
-        # Create a drawing context
-        draw = ImageDraw.Draw(template)
-        
-        template_width, template_height = template.size
-        mid_x = template_width // 2
-        mid_y = template_height // 2
-        
-        # ===== LEFT SIDE =====
-        # Resize photo: height is hard-capped at PHOTO_HEIGHT, width scales with aspect ratio
-        photo_aspect = photo.width / photo.height
-        resized_h = PHOTO_HEIGHT
-        resized_w = int(PHOTO_HEIGHT * photo_aspect)
-        logger.info(f"Resizing photo to {resized_w}x{resized_h} (PHOTO_HEIGHT={PHOTO_HEIGHT})")
 
-        # Photo position - vertically centered around mid_y
-        photo_x_start = PHOTO_LEFT_OFFSET
-        photo_y_start = mid_y - (resized_h // 2)
-        
+        draw = ImageDraw.Draw(template)
+        template_width, template_height = template.size
+
+        # ===== PHOTO — scale to fit within PHOTO_MAX_W x PHOTO_MAX_H, preserve aspect ratio =====
+        photo_aspect = photo.width / photo.height
+        if photo_aspect >= 1:  # landscape or square — width is the limiting dimension
+            resized_w = PHOTO_MAX_W
+            resized_h = int(PHOTO_MAX_W / photo_aspect)
+        else:                  # portrait — height is the limiting dimension
+            resized_h = PHOTO_MAX_H
+            resized_w = int(PHOTO_MAX_H * photo_aspect)
+        logger.info(f"Photo resized to {resized_w}x{resized_h} (max {PHOTO_MAX_W}x{PHOTO_MAX_H})")
         photo_resized = photo.resize((resized_w, resized_h), Image.Resampling.LANCZOS)
-        
-        # Paste photo
-        template.paste(photo_resized, (photo_x_start, photo_y_start))
-        
-        # Get fonts
+        template.paste(photo_resized, (PHOTO_SLOT_X, PHOTO_SLOT_Y))
+
         text_font = get_font(size=TEXT_FONT_SIZE, bold=False)
-        
-        # LEFT SIDE: Name, DOB, and Gender to the right of photo
-        text_x = photo_x_start + resized_w + TEXT_SPACING_AFTER_PHOTO
-        text_y = photo_y_start + TEXT_VERTICAL_OFFSET
-        
-        # Name (no label, just value)
-        draw.text(
-            (text_x, text_y),
-            name[:30],  # Truncate long names
-            font=text_font,
-            fill=(0, 0, 0, 255)
-        )
-        
-        # DOB in single line: "DOB: dd/mm/yyyy"
-        dob_formatted = format_date_dob(dob)
-        dob_y = text_y + TEXT_FONT_SIZE + LINE_SPACING
-        draw.text(
-            (text_x, dob_y),
-            f"DOB: {dob_formatted}",
-            font=text_font,
-            fill=(0, 0, 0, 255)
-        )
-        
-        # Gender in single line: "Gender: xxxx"
-        gender_y = dob_y + TEXT_FONT_SIZE + LINE_SPACING
-        draw.text(
-            (text_x, gender_y),
-            f"Gender: {gender}",
-            font=text_font,
-            fill=(0, 0, 0, 255)
-        )
-        
-        # Aadhar Number at the bottom of left section
-        aadhar_x = text_x + AADHAR_HORIZONTAL_OFFSET
-        aadhar_y = gender_y + TEXT_FONT_SIZE + (LINE_SPACING * 4) + AADHAR_VERTICAL_OFFSET
-        draw.text(
-            (aadhar_x, aadhar_y),
-            f"{aadhar_number}",
-            font=text_font,
-            fill=(0, 0, 0, 255)
-        )
-        
-        # ===== RIGHT SIDE =====
-        right_margin = mid_x + ADDRESS_RIGHT_OFFSET
-        
-        # Address: "ADDRESS : <first part>," on first line, rest indented to align
-        address_label_y = photo_y_start + ADDRESS_VERTICAL_OFFSET
+
+        # ===== LEFT TEXT BLOCK — absolute coords, independent of photo =====
+        draw.text((TEXT_X, TEXT_Y),                  name[:30],                    font=text_font, fill=(0, 0, 0, 255))
+        draw.text((TEXT_X, TEXT_Y + LINE_HEIGHT),     f"DOB: {format_date_dob(dob)}", font=text_font, fill=(0, 0, 0, 255))
+        draw.text((TEXT_X, TEXT_Y + LINE_HEIGHT * 2), f"Gender: {gender}",          font=text_font, fill=(0, 0, 0, 255))
+
+        # ===== AADHAR NUMBER — fixed row, both sides =====
+        draw.text((AADHAR_LEFT_X,  AADHAR_Y), aadhar_number, font=text_font, fill=(0, 0, 0, 255))
+        draw.text((AADHAR_RIGHT_X, AADHAR_Y), aadhar_number, font=text_font, fill=(0, 0, 0, 255))
+
+        # ===== RIGHT SIDE ADDRESS — fixed position =====
         address_parts = [part.strip() for part in address.split(",") if part.strip()]
 
         label_prefix = "ADDRESS : "
-        # Measure prefix width so continuation lines align under the first part
-        prefix_bbox = draw.textbbox((0, 0), label_prefix, font=text_font)
+        prefix_bbox  = draw.textbbox((0, 0), label_prefix, font=text_font)
         prefix_width = prefix_bbox[2] - prefix_bbox[0]
-        indent_x = right_margin + prefix_width
+        indent_x     = ADDRESS_X + prefix_width
         indent_width = template_width - indent_x - 20
 
         if address_parts:
-            # First line: "ADDRESS : <first part>,"  (comma only if more parts follow)
             first_suffix = address_parts[0] + ("," if len(address_parts) > 1 else "")
-            draw.text(
-                (right_margin, address_label_y),
-                label_prefix + first_suffix,
-                font=text_font,
-                fill=(0, 0, 0, 255)
-            )
-            address_content_y = address_label_y + TEXT_FONT_SIZE + LINE_SPACING
-            # Remaining parts indented
+            draw.text((ADDRESS_X, ADDRESS_Y), label_prefix + first_suffix, font=text_font, fill=(0, 0, 0, 255))
+            addr_y = ADDRESS_Y + LINE_HEIGHT
             for part in address_parts[1:]:
                 draw_wrapped_text(
-                    draw=draw,
-                    text=part,
-                    x=indent_x,
-                    y=address_content_y,
-                    font=text_font,
-                    fill=(0, 0, 0, 255),
-                    max_width=indent_width,
-                    line_spacing=LINE_SPACING
+                    draw=draw, text=part, x=indent_x, y=addr_y,
+                    font=text_font, fill=(0, 0, 0, 255),
+                    max_width=indent_width, line_spacing=LINE_SPACING
                 )
-                address_content_y += TEXT_FONT_SIZE + LINE_SPACING
+                addr_y += LINE_HEIGHT
         else:
-            draw.text(
-                (right_margin, address_label_y),
-                label_prefix,
-                font=text_font,
-                fill=(0, 0, 0, 255)
-            )
-        
-        # Aadhar Number on right side at same vertical position as left side
-        aadhar_right_x = right_margin + AADHAR_HORIZONTAL_OFFSET_RIGHT
-        draw.text(
-            (aadhar_right_x, aadhar_y),
-            f"{aadhar_number}",
-            font=text_font,
-            fill=(0, 0, 0, 255)
-        )
-        
+            draw.text((ADDRESS_X, ADDRESS_Y), label_prefix, font=text_font, fill=(0, 0, 0, 255))
+
         return template.convert("RGB")
-        
+
     except Exception as e:
         logger.error(f"Error processing card image: {str(e)}", exc_info=True)
         raise
