@@ -344,81 +344,49 @@ def draw_wrapped_text(
         current_y += font.size + line_spacing
 
 
-_FONT_CDN_BASE = "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf"
-_FONT_FILES = {
-    "regular": "DejaVuSans.ttf",
-    "bold": "DejaVuSans-Bold.ttf",
+# Roboto font — bundled in static/fonts; re-downloaded from Google's GitHub if missing.
+_ROBOTO_FONTS = {
+    "regular": {
+        "file": "Roboto-Regular.ttf",
+        "url":  "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf",
+    },
+    "bold": {
+        "file": "Roboto-Bold.ttf",
+        "url":  "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf",
+    },
 }
-
-
-def _ensure_font(font_filename: str, dest_dir: Path) -> Path | None:
-    """
-    Ensure a font file exists locally; download from CDN if missing.
-
-    Args:
-        font_filename: TTF filename (e.g. 'DejaVuSans.ttf')
-        dest_dir: Directory to save the font
-
-    Returns:
-        Path to the font file, or None if unavailable
-    """
-    dest_path = dest_dir / font_filename
-    if dest_path.exists():
-        return dest_path
-
-    # Try to download from jsDelivr CDN
-    url = f"{_FONT_CDN_BASE}/{font_filename}"
-    try:
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Downloading font from CDN: {url}")
-        urllib.request.urlretrieve(url, str(dest_path))
-        logger.info(f"Font saved to {dest_path}")
-        return dest_path
-    except Exception as e:
-        logger.warning(f"Could not download font {font_filename} from CDN: {e}")
-        return None
+_FONTS_DIR = Path(__file__).parent / "static" / "fonts"
 
 
 def get_font(size: int = 20, bold: bool = False) -> ImageFont.FreeTypeFont:
     """
-    Get a TrueType font (DejaVu Sans).
-    Checks bundled fonts first; falls back to CDN download, then system fonts.
+    Return a Roboto TrueType font at the requested size.
+    Uses the bundled file in static/fonts/; downloads it from Google's GitHub on
+    first run if the file is missing.  Falls back to PIL's bitmap font if the
+    download fails.
 
     Args:
-        size: Font size
-        bold: Whether to use bold variant
+        size: Font size in points
+        bold: Use the Bold weight when True, Regular otherwise
 
     Returns:
-        PIL Font object
+        PIL ImageFont object
     """
-    font_filename = _FONT_FILES["bold"] if bold else _FONT_FILES["regular"]
-    bundled_font_dir = Path(__file__).parent / "static" / "fonts"
+    variant = "bold" if bold else "regular"
+    info = _ROBOTO_FONTS[variant]
+    font_path = _FONTS_DIR / info["file"]
 
-    # 1. Try bundled font (or download from CDN into bundle dir)
-    font_path = _ensure_font(font_filename, bundled_font_dir)
-    if font_path:
+    if not font_path.exists():
         try:
-            return ImageFont.truetype(str(font_path), size=size)
+            _FONTS_DIR.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Downloading {info['file']} from Google Fonts…")
+            urllib.request.urlretrieve(info["url"], str(font_path))
+            logger.info(f"Roboto font saved to {font_path}")
         except Exception as e:
-            logger.warning(f"Failed to load bundled font {font_path}: {e}")
+            logger.warning(f"Could not download Roboto font: {e}")
+            return ImageFont.load_default()
 
-    # 2. Try system fonts
-    system_fonts = [
-        f"/usr/share/fonts/truetype/dejavu/{font_filename}",   # Linux (Render)
-        f"/System/Library/Fonts/Supplemental/Arial{'Bold' if bold else ''}.ttf",  # macOS
-        "/Library/Fonts/Arial.ttf",                             # macOS alternate
-        "C:\\Windows\\Fonts\\arial.ttf",                        # Windows
-    ]
-    for path in system_fonts:
-        try:
-            if os.path.exists(path):
-                return ImageFont.truetype(path, size=size)
-        except Exception:
-            continue
-
-    # 3. Last resort: PIL default (bitmap) font
-    logger.warning("Could not load TrueType font, using PIL default")
-    return ImageFont.load_default()
+    return ImageFont.truetype(str(font_path), size=size)
 
 
 def format_date(date_str: str) -> str:
