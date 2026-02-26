@@ -26,7 +26,8 @@ from reportlab.lib.utils import ImageReader
 # Configuration
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 TEMPLATE_PATH = Path(__file__).parent / "CardTemplate.jpeg"
-PLACEHOLDER_PATH = Path(__file__).parent / "placeholder-man.webp"
+PLACEHOLDER_MAN_PATH = Path(__file__).parent / "placeholder-man.jpeg"
+PLACEHOLDER_WOMAN_PATH = Path(__file__).parent / "placeholder-woman.jpeg"
 ALLOWED_FORMATS = {"image/jpeg", "image/png", "image/webp"}
 
 # Logging
@@ -117,10 +118,14 @@ async def generate_id_card(
                     detail="Only JPEG, PNG, and WEBP images are supported"
                 )
         else:
-            # Use placeholder image
-            if not PLACEHOLDER_PATH.exists():
-                raise FileNotFoundError(f"Placeholder image not found at {PLACEHOLDER_PATH}")
-            with open(PLACEHOLDER_PATH, "rb") as f:
+            # Use gender-specific placeholder image
+            if gender.lower() == "female":
+                placeholder_path = PLACEHOLDER_WOMAN_PATH
+            else:
+                placeholder_path = PLACEHOLDER_MAN_PATH
+            if not placeholder_path.exists():
+                raise FileNotFoundError(f"Placeholder image not found at {placeholder_path}")
+            with open(placeholder_path, "rb") as f:
                 photo_content = f.read()
         
         # Generate random Aadhar number
